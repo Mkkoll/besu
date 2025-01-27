@@ -21,6 +21,7 @@ import java.util.concurrent.ConcurrentMap;
 import javax.annotation.Nonnull;
 
 import com.google.common.collect.ForwardingMap;
+import org.jetbrains.annotations.Nullable;
 
 public class StorageConsumingMap<K, T> extends ForwardingMap<K, T> {
 
@@ -40,6 +41,20 @@ public class StorageConsumingMap<K, T> extends ForwardingMap<K, T> {
   public T put(@Nonnull final K slotKey, @Nonnull final T value) {
     consumer.process(address, slotKey);
     return storages.put(slotKey, value);
+  }
+
+  public T putWithoutPreload(@Nonnull final K slotKey, @Nonnull final T value) {
+    return storages.put(slotKey, value);
+  }
+
+  @Nullable
+  public T putIfAbsentWithoutPreload(final K key, final T value) {
+    T v = this.get(key);
+    if (v == null) {
+      v = this.putWithoutPreload(key, value);
+    }
+
+    return v;
   }
 
   public Consumer<K> getConsumer() {

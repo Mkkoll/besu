@@ -50,6 +50,11 @@ public class BonsaiCachedMerkleTrieLoader implements StorageSubscriber {
     metricsSystem.createGuavaCacheCollector(BLOCKCHAIN, "storageNodes", storageNodes);
   }
 
+  public void importFromMerkleTrieLoader(final BonsaiCachedMerkleTrieLoader other) {
+    accountNodes.putAll(other.accountNodes.asMap());
+    storageNodes.putAll(other.storageNodes.asMap());
+  }
+
   public void preLoadAccount(
       final BonsaiWorldStateKeyValueStorage worldStateKeyValueStorage,
       final Hash worldStateRootHash,

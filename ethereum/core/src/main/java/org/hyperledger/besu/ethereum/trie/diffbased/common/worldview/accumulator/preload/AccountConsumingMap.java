@@ -21,6 +21,7 @@ import java.util.concurrent.ConcurrentMap;
 import javax.annotation.Nonnull;
 
 import com.google.common.collect.ForwardingMap;
+import org.jetbrains.annotations.Nullable;
 
 public class AccountConsumingMap<T> extends ForwardingMap<Address, T> {
 
@@ -36,6 +37,20 @@ public class AccountConsumingMap<T> extends ForwardingMap<Address, T> {
   public T put(@Nonnull final Address address, @Nonnull final T value) {
     consumer.process(address, value);
     return accounts.put(address, value);
+  }
+
+  public T putWithoutPreload(@Nonnull final Address address, @Nonnull final T value) {
+    return accounts.put(address, value);
+  }
+
+  @Nullable
+  public T putIfAbsentWithoutPreload(final Address key, final T value) {
+    T v = this.get(key);
+    if (v == null) {
+      v = this.putWithoutPreload(key, value);
+    }
+
+    return v;
   }
 
   public Consumer<T> getConsumer() {

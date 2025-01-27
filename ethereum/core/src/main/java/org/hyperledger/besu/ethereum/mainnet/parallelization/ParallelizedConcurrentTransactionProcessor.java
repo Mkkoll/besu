@@ -15,6 +15,7 @@
 package org.hyperledger.besu.ethereum.mainnet.parallelization;
 
 import org.hyperledger.besu.datatypes.Address;
+import org.hyperledger.besu.datatypes.StorageSlotKey;
 import org.hyperledger.besu.datatypes.Wei;
 import org.hyperledger.besu.ethereum.ProtocolContext;
 import org.hyperledger.besu.ethereum.core.BlockHeader;
@@ -24,12 +25,15 @@ import org.hyperledger.besu.ethereum.mainnet.MainnetTransactionProcessor;
 import org.hyperledger.besu.ethereum.mainnet.TransactionValidationParams;
 import org.hyperledger.besu.ethereum.privacy.storage.PrivateMetadataUpdater;
 import org.hyperledger.besu.ethereum.processing.TransactionProcessingResult;
+import org.hyperledger.besu.ethereum.trie.diffbased.bonsai.cache.BonsaiCachedMerkleTrieLoader;
 import org.hyperledger.besu.ethereum.trie.diffbased.bonsai.worldview.BonsaiWorldState;
+import org.hyperledger.besu.ethereum.trie.diffbased.bonsai.worldview.BonsaiWorldStateUpdateAccumulator;
 import org.hyperledger.besu.ethereum.trie.diffbased.common.worldview.DiffBasedWorldState;
 import org.hyperledger.besu.ethereum.trie.diffbased.common.worldview.accumulator.DiffBasedWorldStateUpdateAccumulator;
 import org.hyperledger.besu.evm.operation.BlockHashOperation;
 import org.hyperledger.besu.evm.tracing.OperationTracer;
 import org.hyperledger.besu.evm.worldstate.WorldView;
+import org.hyperledger.besu.metrics.noop.NoOpMetricsSystem;
 import org.hyperledger.besu.plugin.services.metrics.Counter;
 
 import java.util.List;
@@ -183,6 +187,9 @@ public class ParallelizedConcurrentTransactionProcessor {
                   privateMetadataUpdater,
                   blobGasPrice);
 
+          final BonsaiWorldStateUpdateAccumulator forPreload =
+              (BonsaiWorldStateUpdateAccumulator) ws.getAccumulator().copy();
+
           // commit the accumulator in order to apply all the modifications
           ws.getAccumulator().commit();
 
@@ -202,6 +209,34 @@ public class ParallelizedConcurrentTransactionProcessor {
           }
           parallelizedTransactionContextByLocation.put(
               transactionLocation, parallelizedTransactionContext);
+
+          CompletableFuture.runAsync(
+              new Runnable() {
+                @Override
+                public void run() {
+                  final BonsaiCachedMerkleTrieLoader bonsaiCachedMerkleTrieLoader =
+                      new BonsaiCachedMerkleTrieLoader(new NoOpMetricsSystem());
+                  forPreload
+                      .getUpdatedAccounts()
+                      .forEach(
+                          account -> {
+                            bonsaiCachedMerkleTrieLoader.cacheAccountNodes(
+                                ws.getWorldStateStorage(),
+                                ws.getWorldStateRootHash(),
+                                account.getAddress());
+                            account
+                                .getUpdatedStorage()
+                                .forEach(
+                                    (key, value) ->
+                                        bonsaiCachedMerkleTrieLoader.cacheStorageNodes(
+                                            ws.getWorldStateStorage(),
+                                            account.getAddress(),
+                                            new StorageSlotKey(key)));
+                          });
+                  parallelizedTransactionContext.addBonsaiCachedMerkleTrieLoader(
+                      bonsaiCachedMerkleTrieLoader);
+                }
+              });
         }
       } catch (Exception ex) {
         // no op as failing to get worldstate
@@ -255,12 +290,21 @@ public class ParallelizedConcurrentTransactionProcessor {
       final boolean hasCollision =
           transactionCollisionDetector.hasCollision(
               transaction, miningBeneficiary, parallelizedTransactionContext, blockAccumulator);
+      final Optional<BonsaiCachedMerkleTrieLoader> preloader =
+          parallelizedTransactionContext.getBonsaiCachedMerkleTrieLoader();
+      preloader.ifPresent(
+          bonsaiCachedMerkleTrieLoader -> {
+            ((BonsaiWorldState) diffBasedWorldState)
+                .getBonsaiCachedMerkleTrieLoader()
+                .importFromMerkleTrieLoader(bonsaiCachedMerkleTrieLoader);
+          });
+
       if (transactionProcessingResult.isSuccessful() && !hasCollision) {
         blockAccumulator
             .getOrCreate(miningBeneficiary)
             .incrementBalance(parallelizedTransactionContext.miningBeneficiaryReward());
 
-        blockAccumulator.importStateChangesFromSource(transactionAccumulator);
+        blockAccumulator.importStateChangesFromSource(transactionAccumulator, preloader.isEmpty());
 
         if (confirmedParallelizedTransactionCounter.isPresent()) {
           confirmedParallelizedTransactionCounter.get().inc();
@@ -269,7 +313,7 @@ public class ParallelizedConcurrentTransactionProcessor {
         }
         return Optional.of(transactionProcessingResult);
       } else {
-        blockAccumulator.importPriorStateFromSource(transactionAccumulator);
+        blockAccumulator.importPriorStateFromSource(transactionAccumulator, preloader.isEmpty());
         if (conflictingButCachedTransactionCounter.isPresent())
           conflictingButCachedTransactionCounter.get().inc();
         // If there is a conflict, we return an empty result to signal the block processor to

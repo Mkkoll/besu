@@ -111,7 +111,7 @@ public abstract class DiffBasedWorldStateUpdateAccumulator<ACCOUNT extends DiffB
    * @param source The source accumulator
    */
   public void importStateChangesFromSource(
-      final DiffBasedWorldStateUpdateAccumulator<ACCOUNT> source) {
+      final DiffBasedWorldStateUpdateAccumulator<ACCOUNT> source, final boolean withPreloading) {
     source
         .getAccountsToUpdate()
         .forEach(
@@ -124,7 +124,12 @@ public abstract class DiffBasedWorldStateUpdateAccumulator<ACCOUNT extends DiffB
                   diffBasedValue.getUpdated() != null
                       ? copyAccount(diffBasedValue.getUpdated(), this, true)
                       : null;
-              accountsToUpdate.put(address, new DiffBasedValue<>(copyPrior, copyUpdated));
+              if (withPreloading) {
+                accountsToUpdate.put(address, new DiffBasedValue<>(copyPrior, copyUpdated));
+              } else {
+                accountsToUpdate.putWithoutPreload(
+                    address, new DiffBasedValue<>(copyPrior, copyUpdated));
+              }
             });
     source
         .getCodeToUpdate()
@@ -146,10 +151,19 @@ public abstract class DiffBasedWorldStateUpdateAccumulator<ACCOUNT extends DiffB
                               address, new ConcurrentHashMap<>(), storagePreloader));
               slots.forEach(
                   (storageSlotKey, uInt256DiffBasedValue) -> {
-                    storageConsumingMap.put(
-                        storageSlotKey,
-                        new DiffBasedValue<>(
-                            uInt256DiffBasedValue.getPrior(), uInt256DiffBasedValue.getUpdated()));
+                    if (withPreloading) {
+                      storageConsumingMap.put(
+                          storageSlotKey,
+                          new DiffBasedValue<>(
+                              uInt256DiffBasedValue.getPrior(),
+                              uInt256DiffBasedValue.getUpdated()));
+                    } else {
+                      storageConsumingMap.putWithoutPreload(
+                          storageSlotKey,
+                          new DiffBasedValue<>(
+                              uInt256DiffBasedValue.getPrior(),
+                              uInt256DiffBasedValue.getUpdated()));
+                    }
                   });
             });
     storageToClear.addAll(source.storageToClear);
@@ -170,7 +184,7 @@ public abstract class DiffBasedWorldStateUpdateAccumulator<ACCOUNT extends DiffB
    * @param source The source accumulator
    */
   public void importPriorStateFromSource(
-      final DiffBasedWorldStateUpdateAccumulator<ACCOUNT> source) {
+      final DiffBasedWorldStateUpdateAccumulator<ACCOUNT> source, final boolean withPreloading) {
 
     source
         .getAccountsToUpdate()
@@ -184,7 +198,12 @@ public abstract class DiffBasedWorldStateUpdateAccumulator<ACCOUNT extends DiffB
                   diffBasedValue.getPrior() != null
                       ? copyAccount(diffBasedValue.getPrior(), this, true)
                       : null;
-              accountsToUpdate.putIfAbsent(address, new DiffBasedValue<>(copyPrior, copyUpdated));
+              if (withPreloading) {
+                accountsToUpdate.putIfAbsent(address, new DiffBasedValue<>(copyPrior, copyUpdated));
+              } else {
+                accountsToUpdate.putIfAbsentWithoutPreload(
+                    address, new DiffBasedValue<>(copyPrior, copyUpdated));
+              }
             });
     source
         .getCodeToUpdate()
@@ -206,10 +225,17 @@ public abstract class DiffBasedWorldStateUpdateAccumulator<ACCOUNT extends DiffB
                               address, new ConcurrentHashMap<>(), storagePreloader));
               slots.forEach(
                   (storageSlotKey, uInt256DiffBasedValue) -> {
-                    storageConsumingMap.putIfAbsent(
-                        storageSlotKey,
-                        new DiffBasedValue<>(
-                            uInt256DiffBasedValue.getPrior(), uInt256DiffBasedValue.getPrior()));
+                    if (withPreloading) {
+                      storageConsumingMap.putIfAbsent(
+                          storageSlotKey,
+                          new DiffBasedValue<>(
+                              uInt256DiffBasedValue.getPrior(), uInt256DiffBasedValue.getPrior()));
+                    } else {
+                      storageConsumingMap.putIfAbsentWithoutPreload(
+                          storageSlotKey,
+                          new DiffBasedValue<>(
+                              uInt256DiffBasedValue.getPrior(), uInt256DiffBasedValue.getPrior()));
+                    }
                   });
             });
     storageKeyHashLookup.putAll(source.storageKeyHashLookup);

@@ -16,15 +16,18 @@ package org.hyperledger.besu.ethereum.mainnet.parallelization;
 
 import org.hyperledger.besu.datatypes.Wei;
 import org.hyperledger.besu.ethereum.processing.TransactionProcessingResult;
+import org.hyperledger.besu.ethereum.trie.diffbased.bonsai.cache.BonsaiCachedMerkleTrieLoader;
 import org.hyperledger.besu.ethereum.trie.diffbased.common.worldview.accumulator.DiffBasedWorldStateUpdateAccumulator;
 
 import java.util.Objects;
+import java.util.Optional;
 
 public final class ParallelizedTransactionContext {
   private final DiffBasedWorldStateUpdateAccumulator<?> transactionAccumulator;
   private final TransactionProcessingResult transactionProcessingResult;
   private final boolean isMiningBeneficiaryTouchedPreRewardByTransaction;
   private final Wei miningBeneficiaryReward;
+  private Optional<BonsaiCachedMerkleTrieLoader> bonsaiCachedMerkleTrieLoader;
 
   public ParallelizedTransactionContext(
       final DiffBasedWorldStateUpdateAccumulator<?> transactionAccumulator,
@@ -36,6 +39,7 @@ public final class ParallelizedTransactionContext {
     this.isMiningBeneficiaryTouchedPreRewardByTransaction =
         isMiningBeneficiaryTouchedPreRewardByTransaction;
     this.miningBeneficiaryReward = miningBeneficiaryReward;
+    this.bonsaiCachedMerkleTrieLoader = Optional.empty();
   }
 
   public DiffBasedWorldStateUpdateAccumulator<?> transactionAccumulator() {
@@ -50,20 +54,29 @@ public final class ParallelizedTransactionContext {
     return isMiningBeneficiaryTouchedPreRewardByTransaction;
   }
 
+  public Optional<BonsaiCachedMerkleTrieLoader> getBonsaiCachedMerkleTrieLoader() {
+    return bonsaiCachedMerkleTrieLoader;
+  }
+
+  public void addBonsaiCachedMerkleTrieLoader(
+      final BonsaiCachedMerkleTrieLoader bonsaiCachedMerkleTrieLoader) {
+    this.bonsaiCachedMerkleTrieLoader = Optional.ofNullable(bonsaiCachedMerkleTrieLoader);
+  }
+
   public Wei miningBeneficiaryReward() {
     return miningBeneficiaryReward;
   }
 
   @Override
-  public boolean equals(final Object obj) {
-    if (obj == this) return true;
-    if (obj == null || obj.getClass() != this.getClass()) return false;
-    var that = (ParallelizedTransactionContext) obj;
-    return Objects.equals(this.transactionAccumulator, that.transactionAccumulator)
-        && Objects.equals(this.transactionProcessingResult, that.transactionProcessingResult)
-        && this.isMiningBeneficiaryTouchedPreRewardByTransaction
+  public boolean equals(final Object o) {
+    if (o == null || getClass() != o.getClass()) return false;
+    ParallelizedTransactionContext that = (ParallelizedTransactionContext) o;
+    return isMiningBeneficiaryTouchedPreRewardByTransaction
             == that.isMiningBeneficiaryTouchedPreRewardByTransaction
-        && Objects.equals(this.miningBeneficiaryReward, that.miningBeneficiaryReward);
+        && Objects.equals(transactionAccumulator, that.transactionAccumulator)
+        && Objects.equals(transactionProcessingResult, that.transactionProcessingResult)
+        && Objects.equals(miningBeneficiaryReward, that.miningBeneficiaryReward)
+        && Objects.equals(bonsaiCachedMerkleTrieLoader, that.bonsaiCachedMerkleTrieLoader);
   }
 
   @Override
@@ -72,24 +85,8 @@ public final class ParallelizedTransactionContext {
         transactionAccumulator,
         transactionProcessingResult,
         isMiningBeneficiaryTouchedPreRewardByTransaction,
-        miningBeneficiaryReward);
-  }
-
-  @Override
-  public String toString() {
-    return "ParallelizedTransactionContext["
-        + "transactionAccumulator="
-        + transactionAccumulator
-        + ", "
-        + "transactionProcessingResult="
-        + transactionProcessingResult
-        + ", "
-        + "isMiningBeneficiaryTouchedPreRewardByTransaction="
-        + isMiningBeneficiaryTouchedPreRewardByTransaction
-        + ", "
-        + "miningBeneficiaryReward="
-        + miningBeneficiaryReward
-        + ']';
+        miningBeneficiaryReward,
+        bonsaiCachedMerkleTrieLoader);
   }
 
   public static class Builder {

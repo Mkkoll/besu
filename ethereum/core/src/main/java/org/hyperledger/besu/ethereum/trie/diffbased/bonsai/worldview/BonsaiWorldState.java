@@ -178,8 +178,17 @@ public class BonsaiWorldState extends DiffBasedWorldState {
         worldStateUpdater.getAccountsToUpdate().entrySet()) {
       final Bytes accountKey = accountUpdate.getKey();
       final DiffBasedValue<BonsaiAccount> bonsaiValue = accountUpdate.getValue();
+      final BonsaiAccount priorAccount = bonsaiValue.getPrior();
       final BonsaiAccount updatedAccount = bonsaiValue.getUpdated();
       try {
+
+        if (priorAccount == updatedAccount) {
+          if (priorAccount == null
+              || priorAccount.serializeAccount().equals(updatedAccount.serializeAccount())) {
+            continue;
+          }
+        }
+
         if (updatedAccount == null) {
           final Hash addressHash = hashAndSavePreImage(accountKey);
           accountTrie.remove(addressHash);
@@ -187,11 +196,12 @@ public class BonsaiWorldState extends DiffBasedWorldState {
               bonsaiUpdater -> bonsaiUpdater.removeAccountInfoState(addressHash));
         } else {
           final Hash addressHash = updatedAccount.getAddressHash();
-          final Bytes accountValue = updatedAccount.serializeAccount();
+          final Bytes updatedAccountValue = updatedAccount.serializeAccount();
           maybeStateUpdater.ifPresent(
               bonsaiUpdater ->
-                  bonsaiUpdater.putAccountInfoState(hashAndSavePreImage(accountKey), accountValue));
-          accountTrie.put(addressHash, accountValue);
+                  bonsaiUpdater.putAccountInfoState(
+                      hashAndSavePreImage(accountKey), updatedAccountValue));
+          accountTrie.put(addressHash, updatedAccountValue);
         }
       } catch (MerkleTrieException e) {
         // need to throw to trigger the heal
@@ -230,6 +240,10 @@ public class BonsaiWorldState extends DiffBasedWorldState {
         });
   }
 
+  private boolean isZeroSlot(final UInt256 value) {
+    return value == null || value.equals(UInt256.ZERO);
+  }
+
   private boolean codeIsEmpty(final Bytes value) {
     return value == null || value.isEmpty();
   }
@@ -261,8 +275,15 @@ public class BonsaiWorldState extends DiffBasedWorldState {
       for (final Map.Entry<StorageSlotKey, DiffBasedValue<UInt256>> storageUpdate :
           storageAccountUpdate.getValue().entrySet()) {
         final Hash slotHash = storageUpdate.getKey().getSlotHash();
+        final UInt256 priorStorage = storageUpdate.getValue().getPrior();
         final UInt256 updatedStorage = storageUpdate.getValue().getUpdated();
         try {
+
+          if (Objects.equals(priorStorage, updatedStorage)
+              || (isZeroSlot(priorStorage) && isZeroSlot(updatedStorage))) {
+            continue;
+          }
+
           if (updatedStorage == null || updatedStorage.equals(UInt256.ZERO)) {
             maybeStateUpdater.ifPresent(
                 bonsaiUpdater ->
@@ -441,6 +462,10 @@ public class BonsaiWorldState extends DiffBasedWorldState {
     this.worldStateConfig.setFrozen(true);
     this.worldStateKeyValueStorage = new BonsaiWorldStateLayerStorage(getWorldStateStorage());
     return this;
+  }
+
+  public BonsaiCachedMerkleTrieLoader getBonsaiCachedMerkleTrieLoader() {
+    return bonsaiCachedMerkleTrieLoader;
   }
 
   public void disableCacheMerkleTrieLoader() {
